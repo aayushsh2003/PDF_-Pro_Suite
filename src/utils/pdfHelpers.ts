@@ -291,3 +291,155 @@ export function downloadPDF(pdfBytes: Uint8Array, filename: string) {
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 }
+
+export async function cropPages(file: File, cropMargin: number): Promise<Uint8Array> {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await PDFDocument.load(arrayBuffer);
+  const pages = pdf.getPages();
+
+  pages.forEach((page) => {
+    const { width, height } = page.getSize();
+    page.drawRectangle({
+      x: cropMargin,
+      y: cropMargin,
+      width: width - (cropMargin * 2),
+      height: height - (cropMargin * 2),
+      borderColor: rgb(1, 1, 1),
+      borderWidth: 0,
+    });
+  });
+
+  return await pdf.save();
+}
+
+export async function addPageBackground(file: File, colorR: number, colorG: number, colorB: number): Promise<Uint8Array> {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await PDFDocument.load(arrayBuffer);
+  const pages = pdf.getPages();
+
+  pages.forEach((page) => {
+    const { width, height } = page.getSize();
+    page.drawRectangle({
+      x: 0,
+      y: 0,
+      width,
+      height,
+      color: rgb(colorR / 255, colorG / 255, colorB / 255),
+    });
+  });
+
+  return await pdf.save();
+}
+
+export async function resizePages(file: File, width: number, height: number): Promise<Uint8Array> {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await PDFDocument.load(arrayBuffer);
+  const newPdf = await PDFDocument.create();
+
+  const indices = pdf.getPageIndices();
+  const copiedPages = await newPdf.copyPages(pdf, indices);
+
+  copiedPages.forEach((page) => {
+    page.setSize(width, height);
+    newPdf.addPage(page);
+  });
+
+  return await newPdf.save();
+}
+
+export async function rotateSinglePage(file: File, pageNumber: number, rotation: number): Promise<Uint8Array> {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await PDFDocument.load(arrayBuffer);
+  const pages = pdf.getPages();
+
+  if (pageNumber > 0 && pageNumber <= pages.length) {
+    const page = pages[pageNumber - 1];
+    const currentRotation = page.getRotation().angle;
+    page.setRotation({ type: 'degrees', angle: (currentRotation + rotation) % 360 });
+  }
+
+  return await pdf.save();
+}
+
+export async function optimizePDF(file: File): Promise<Uint8Array> {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await PDFDocument.load(arrayBuffer);
+
+  return await pdf.save();
+}
+
+export async function addHeader(file: File, headerText: string): Promise<Uint8Array> {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await PDFDocument.load(arrayBuffer);
+  const pages = pdf.getPages();
+
+  pages.forEach((page) => {
+    const { width, height } = page.getSize();
+    page.drawText(headerText, {
+      x: 30,
+      y: height - 30,
+      size: 10,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+  });
+
+  return await pdf.save();
+}
+
+export async function addFooter(file: File, footerText: string): Promise<Uint8Array> {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await PDFDocument.load(arrayBuffer);
+  const pages = pdf.getPages();
+
+  pages.forEach((page) => {
+    const { width } = page.getSize();
+    page.drawText(footerText, {
+      x: 30,
+      y: 15,
+      size: 10,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+  });
+
+  return await pdf.save();
+}
+
+export async function convertToImages(file: File): Promise<string[]> {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await PDFDocument.load(arrayBuffer);
+  const pageCount = pdf.getPageCount();
+  const images: string[] = [];
+
+  for (let i = 0; i < pageCount; i++) {
+    const page = pdf.getPage(i);
+    const { width, height } = page.getSize();
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+
+    if (ctx) {
+      images.push(canvas.toDataURL('image/png'));
+    }
+  }
+
+  return images;
+}
+
+export async function mergePDFsAdvanced(files: File[], order?: number[]): Promise<Uint8Array> {
+  const mergedPdf = await PDFDocument.create();
+  const fileOrder = order || files.map((_, i) => i);
+
+  for (const fileIndex of fileOrder) {
+    if (fileIndex >= 0 && fileIndex < files.length) {
+      const file = files[fileIndex];
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await PDFDocument.load(arrayBuffer);
+      const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+      copiedPages.forEach((page) => mergedPdf.addPage(page));
+    }
+  }
+
+  return await mergedPdf.save();
+}

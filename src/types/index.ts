@@ -6,4 +6,4 @@ export interface PDFFile {
   preview?: string;
 }
 
-export type ToolType = 'merge' | 'split' | 'rotate' | 'extract' | 'reorder' | 'compress' | 'delete' | 'duplicate' | 'watermark' | 'remove-duplicates' | 'reverse' | 'page-numbers' | 'grayscale' | 'metadata' | 'blank-pages';
+export type ToolType = 'merge' | 'split' | 'rotate' | 'extract' | 'reorder' | 'compress' | 'delete' | 'duplicate' | 'watermark' | 'remove-duplicates' | 'reverse' | 'page-numbers' | 'grayscale' | 'metadata' | 'blank-pages' | 'crop' | 'optimize' | 'header-footer' | 'batch' | 'reorder-advanced';

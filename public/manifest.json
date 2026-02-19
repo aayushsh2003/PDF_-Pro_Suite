@@ -1,0 +1,49 @@
+{
+  "name": "PDF Ki Bari - Free Online PDF Tools",
+  "short_name": "PDF Ki Bari",
+  "description": "Free online PDF tools to merge, split, compress, rotate, and edit PDFs. No signup required. 100% secure browser-based processing.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f172a",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ],
+  "categories": ["productivity", "utilities", "business"],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Merge PDFs",
+      "short_name": "Merge",
+      "description": "Combine multiple PDF files into one",
+      "url": "/#merge"
+    },
+    {
+      "name": "Split PDF",
+      "short_name": "Split",
+      "description": "Split a PDF into separate pages",
+      "url": "/#split"
+    },
+    {
+      "name": "Compress PDF",
+      "short_name": "Compress",
+      "description": "Reduce PDF file size",
+      "url": "/#compress"
+    }
+  ]
+}
