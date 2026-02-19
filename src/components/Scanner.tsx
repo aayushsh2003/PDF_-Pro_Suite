@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Camera, Image as ImageIcon, FileText, Trash2, Download, Plus, X, RotateCw, Crop, ArrowLeft } from 'lucide-react';
+import { Camera, Image as ImageIcon, FileText, Trash2, Download, Plus, X, ArrowLeft, Settings, Sparkles } from 'lucide-react';
 import { createPDFFromImages } from '../utils/pdfScanner';
 
 interface ScannedPage {
@@ -16,30 +16,107 @@ export default function Scanner({ onBack }: ScannerProps) {
   const [pages, setPages] = useState<ScannedPage[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [captureMode, setCaptureMode] = useState<'camera' | 'upload' | null>(null);
+  const [brightness, setBrightness] = useState(10);
+  const [contrast, setContrast] = useState(1.3);
+  const [sharpen, setSharpen] = useState(true);
+  const [autoEnhance, setAutoEnhance] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  const processImage = async (file: File): Promise<ScannedPage> => {
+  const enhanceImage = (ctx: CanvasRenderingContext2D, width: number, height: number, settings: { brightness: number; contrast: number; sharpen: boolean }) => {
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+
+    for (let i = 0; i < data.length; i += 4) {
+      let r = data[i];
+      let g = data[i + 1];
+      let b = data[i + 2];
+
+      r = r * settings.contrast + settings.brightness;
+      g = g * settings.contrast + settings.brightness;
+      b = b * settings.contrast + settings.brightness;
+
+      data[i] = Math.min(255, Math.max(0, r));
+      data[i + 1] = Math.min(255, Math.max(0, g));
+      data[i + 2] = Math.min(255, Math.max(0, b));
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+
+    if (settings.sharpen) {
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = width;
+      tempCanvas.height = height;
+      const tempCtx = tempCanvas.getContext('2d');
+      if (!tempCtx) return;
+
+      tempCtx.putImageData(ctx.getImageData(0, 0, width, height), 0, 0);
+      const srcData = tempCtx.getImageData(0, 0, width, height);
+      const src = srcData.data;
+      const output = ctx.createImageData(width, height);
+      const dst = output.data;
+
+      const weights = [-1, -1, -1, -1, 9, -1, -1, -1, -1];
+      const side = 3;
+      const halfSide = 1;
+
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const dstOff = (y * width + x) * 4;
+          let r = 0, g = 0, b = 0;
+
+          for (let cy = 0; cy < side; cy++) {
+            for (let cx = 0; cx < side; cx++) {
+              const scy = y + cy - halfSide;
+              const scx = x + cx - halfSide;
+
+              if (scy >= 0 && scy < height && scx >= 0 && scx < width) {
+                const srcOff = (scy * width + scx) * 4;
+                const wt = weights[cy * side + cx];
+                r += src[srcOff] * wt;
+                g += src[srcOff + 1] * wt;
+                b += src[srcOff + 2] * wt;
+              }
+            }
+          }
+
+          dst[dstOff] = Math.min(255, Math.max(0, r));
+          dst[dstOff + 1] = Math.min(255, Math.max(0, g));
+          dst[dstOff + 2] = Math.min(255, Math.max(0, b));
+          dst[dstOff + 3] = src[(y * width + x) * 4 + 3];
+        }
+      }
+
+      ctx.putImageData(output, 0, 0);
+    }
+  };
+
+  const processImage = async (file: File, enhanceSettings?: { brightness: number; contrast: number; sharpen: boolean }): Promise<ScannedPage> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d');
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
           if (!ctx) {
             reject(new Error('Could not get canvas context'));
             return;
           }
 
-          const maxWidth = 1200;
+          const maxWidth = 2400;
           const scale = Math.min(1, maxWidth / img.width);
           canvas.width = img.width * scale;
           canvas.height = img.height * scale;
 
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-          const fullDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+          if (enhanceSettings) {
+            enhanceImage(ctx, canvas.width, canvas.height, enhanceSettings);
+          }
+
+          const fullDataUrl = canvas.toDataURL('image/jpeg', 0.95);
 
           const thumbCanvas = document.createElement('canvas');
           const thumbCtx = thumbCanvas.getContext('2d');
@@ -75,10 +152,12 @@ export default function Scanner({ onBack }: ScannerProps) {
     setIsProcessing(true);
     try {
       const newPages: ScannedPage[] = [];
+      const enhanceSettings = autoEnhance ? { brightness, contrast, sharpen } : undefined;
+
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         if (file.type.startsWith('image/')) {
-          const page = await processImage(file);
+          const page = await processImage(file, enhanceSettings);
           newPages.push(page);
         }
       }
@@ -154,7 +233,7 @@ export default function Scanner({ onBack }: ScannerProps) {
               </div>
               <div>
                 <h1 className="text-3xl font-bold text-slate-800">PDF Scanner</h1>
-                <p className="text-slate-600 mt-1">Scan documents and create PDFs</p>
+                <p className="text-slate-600 mt-1">Scan documents with AI enhancement</p>
               </div>
             </div>
             {pages.length > 0 && (
@@ -199,9 +278,13 @@ export default function Scanner({ onBack }: ScannerProps) {
               <Camera className="w-12 h-12 text-blue-600" />
             </div>
             <h2 className="text-2xl font-bold text-slate-800 mb-3">Start Scanning</h2>
-            <p className="text-slate-600 mb-8 max-w-md mx-auto">
+            <p className="text-slate-600 mb-4 max-w-md mx-auto">
               Capture photos with your camera or upload images to create a PDF document
             </p>
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 rounded-lg mb-8">
+              <Sparkles className="w-4 h-4" />
+              <span className="text-sm font-medium">Auto-enhancement enabled for better quality</span>
+            </div>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
               <button
@@ -229,6 +312,17 @@ export default function Scanner({ onBack }: ScannerProps) {
                 <h3 className="text-xl font-bold text-slate-800">Scanned Pages</h3>
                 <div className="flex gap-3">
                   <button
+                    onClick={() => setShowSettings(!showSettings)}
+                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                      showSettings
+                        ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    <Settings className="w-5 h-5" />
+                    Settings
+                  </button>
+                  <button
                     onClick={handleCameraCapture}
                     disabled={isProcessing}
                     className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
@@ -246,6 +340,93 @@ export default function Scanner({ onBack }: ScannerProps) {
                   </button>
                 </div>
               </div>
+
+              {showSettings && (
+                <div className="mb-6 p-6 bg-gradient-to-br from-blue-50 to-slate-50 rounded-xl border-2 border-blue-200">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Sparkles className="w-5 h-5 text-blue-600" />
+                    <h4 className="font-semibold text-slate-800">Image Enhancement Settings</h4>
+                  </div>
+
+                  <div className="space-y-5">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        id="autoEnhance"
+                        checked={autoEnhance}
+                        onChange={(e) => setAutoEnhance(e.target.checked)}
+                        className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                      />
+                      <label htmlFor="autoEnhance" className="text-sm font-medium text-slate-700 cursor-pointer">
+                        Auto-enhance new scans for better clarity
+                      </label>
+                    </div>
+
+                    {autoEnhance && (
+                      <div className="space-y-5 pl-8 border-l-2 border-blue-300">
+                        <div>
+                          <div className="flex justify-between items-center mb-2">
+                            <label className="text-sm font-medium text-slate-700">Brightness</label>
+                            <span className="text-sm text-slate-600 bg-white px-2 py-1 rounded">{brightness > 0 ? '+' : ''}{brightness}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="-50"
+                            max="50"
+                            value={brightness}
+                            onChange={(e) => setBrightness(Number(e.target.value))}
+                            className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                          />
+                          <div className="flex justify-between text-xs text-slate-500 mt-1">
+                            <span>Darker</span>
+                            <span>Brighter</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between items-center mb-2">
+                            <label className="text-sm font-medium text-slate-700">Contrast</label>
+                            <span className="text-sm text-slate-600 bg-white px-2 py-1 rounded">{contrast.toFixed(1)}x</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0.5"
+                            max="2.5"
+                            step="0.1"
+                            value={contrast}
+                            onChange={(e) => setContrast(Number(e.target.value))}
+                            className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                          />
+                          <div className="flex justify-between text-xs text-slate-500 mt-1">
+                            <span>Low</span>
+                            <span>High</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 pt-2">
+                          <input
+                            type="checkbox"
+                            id="sharpen"
+                            checked={sharpen}
+                            onChange={(e) => setSharpen(e.target.checked)}
+                            className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                          />
+                          <label htmlFor="sharpen" className="text-sm font-medium text-slate-700 cursor-pointer">
+                            Apply sharpening filter for crisp text
+                          </label>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-5 pt-4 border-t border-blue-200">
+                    <p className="text-xs text-slate-600 flex items-start gap-2">
+                      <span className="text-blue-600 mt-0.5">ℹ️</span>
+                      <span>These settings will be applied to all new scans. Existing pages are not affected. Higher values work best for faded or low-quality documents.</span>
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-6">
                 {pages.map((page, index) => (
@@ -312,10 +493,35 @@ export default function Scanner({ onBack }: ScannerProps) {
               </div>
             </div>
 
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-              <p className="text-sm text-blue-700">
-                <strong>Tip:</strong> You can reorder pages by clicking the up/down arrows when hovering over a page thumbnail.
-              </p>
+            <div className="bg-gradient-to-br from-blue-50 to-cyan-50 border-2 border-blue-200 rounded-xl p-5">
+              <div className="flex items-start gap-3">
+                <Sparkles className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-slate-800">Scanning Tips:</p>
+                  <ul className="text-sm text-slate-700 space-y-1.5">
+                    <li className="flex items-start gap-2">
+                      <span className="text-blue-600 mt-0.5">•</span>
+                      <span>Reorder pages using up/down arrows on thumbnails</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-blue-600 mt-0.5">•</span>
+                      <span>Auto-enhancement improves text clarity and contrast automatically</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-blue-600 mt-0.5">•</span>
+                      <span>Adjust brightness for faded documents or dark images</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-blue-600 mt-0.5">•</span>
+                      <span>Enable sharpening for crisp, professional-looking text</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-blue-600 mt-0.5">•</span>
+                      <span>Higher contrast makes text stand out more from the background</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -325,6 +531,7 @@ export default function Scanner({ onBack }: ScannerProps) {
             <div className="bg-white rounded-2xl p-8 shadow-2xl text-center">
               <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
               <p className="text-lg font-semibold text-slate-800">Processing...</p>
+              <p className="text-sm text-slate-600 mt-2">Enhancing image quality</p>
             </div>
           </div>
         )}
