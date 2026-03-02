@@ -8,37 +8,92 @@ export default function ReorderTool({ onBack }: { onBack: () => void }) {
   const [pageCount, setPageCount] = useState(0);
   const [pageOrder, setPageOrder] = useState<number[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ---------- File Select ----------
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
-    if (selectedFile) {
-      setFile(selectedFile);
+    if (!selectedFile) return;
+
+    if (selectedFile.type !== 'application/pdf') {
+      alert('Please upload a valid PDF file');
+      e.target.value = '';
+      return;
+    }
+
+    setFile(selectedFile);
+
+    try {
       const count = await getPDFPageCount(selectedFile);
       setPageCount(count);
+
+      // initialize order [0,1,2,3...]
       setPageOrder(Array.from({ length: count }, (_, i) => i));
+    } catch {
+      alert('Invalid or corrupted PDF');
+      setFile(null);
+      setPageCount(0);
+      setPageOrder([]);
+    }
+
+    // allow re-upload same file
+    e.target.value = '';
+  };
+
+  // ---------- Drag & Drop ----------
+  const handleDrop = async (e: React.DragEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+
+    const droppedFile = e.dataTransfer.files?.[0];
+    if (!droppedFile) return;
+
+    if (droppedFile.type !== 'application/pdf') {
+      alert('Please drop a valid PDF');
+      return;
+    }
+
+    setFile(droppedFile);
+
+    try {
+      const count = await getPDFPageCount(droppedFile);
+      setPageCount(count);
+      setPageOrder(Array.from({ length: count }, (_, i) => i));
+    } catch {
+      alert('Invalid or corrupted PDF');
+      setFile(null);
+      setPageCount(0);
+      setPageOrder([]);
     }
   };
 
+  const handleDragOver = (e: React.DragEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+  };
+
+  // ---------- Move Page ----------
   const moveUp = (index: number) => {
-    if (index > 0) {
-      const newOrder = [...pageOrder];
-      [newOrder[index], newOrder[index - 1]] = [newOrder[index - 1], newOrder[index]];
-      setPageOrder(newOrder);
-    }
+    if (index === 0) return;
+
+    const newOrder = [...pageOrder];
+    [newOrder[index], newOrder[index - 1]] = [newOrder[index - 1], newOrder[index]];
+    setPageOrder(newOrder);
   };
 
   const moveDown = (index: number) => {
-    if (index < pageOrder.length - 1) {
-      const newOrder = [...pageOrder];
-      [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
-      setPageOrder(newOrder);
-    }
+    if (index === pageOrder.length - 1) return;
+
+    const newOrder = [...pageOrder];
+    [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+    setPageOrder(newOrder);
   };
 
+  // ---------- Reorder ----------
   const handleReorder = async () => {
-    if (!file) return;
+    if (!file || isProcessing) return;
+
     setIsProcessing(true);
+
     try {
       const result = await reorderPages(file, pageOrder);
       downloadPDF(result, `reordered_${file.name}`);
@@ -50,36 +105,53 @@ export default function ReorderTool({ onBack }: { onBack: () => void }) {
     }
   };
 
+  // ---------- Reset ----------
+  const resetFile = () => {
+    setFile(null);
+    setPageCount(0);
+    setPageOrder([]);
+  };
+
+  // ---------- UI ----------
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+
       <ToolHeader
         title="Reorder Pages"
         description="Rearrange pages in any order"
         onBack={onBack}
-        icon={ArrowUpDown}
+        icon={<ArrowUpDown className="w-6 h-6 text-white" />}
       />
 
       <div className="container mx-auto px-4 py-8 max-w-2xl">
+
         <div className="bg-white rounded-2xl shadow-lg p-8 mb-6">
+
           {!file ? (
             <button
               onClick={() => fileInputRef.current?.click()}
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
               className="w-full border-2 border-dashed border-slate-300 rounded-xl p-12 text-center hover:border-blue-500 hover:bg-blue-50 transition-all"
             >
               <Upload className="w-12 h-12 text-slate-400 mx-auto mb-3" />
               <p className="text-slate-600 font-semibold mb-1">Click to upload PDF</p>
-              <p className="text-slate-500 text-sm">or drag and drop</p>
+              <p className="text-slate-500 text-sm">or drag and drop PDF here</p>
             </button>
           ) : (
             <div className="space-y-6">
+
+              {/* File Info */}
               <div className="bg-slate-50 rounded-lg p-4">
                 <p className="text-sm text-slate-600">Selected file:</p>
-                <p className="font-semibold text-slate-800">{file.name}</p>
+                <p className="font-semibold text-slate-800 break-all">{file.name}</p>
                 <p className="text-sm text-slate-600 mt-1">Pages: {pageCount}</p>
               </div>
 
+              {/* Page Order */}
               <div>
                 <p className="text-sm font-semibold text-slate-700 mb-3">Page Order</p>
+
                 <div className="space-y-2 max-h-96 overflow-y-auto">
                   {pageOrder.map((page, index) => (
                     <div
@@ -89,18 +161,23 @@ export default function ReorderTool({ onBack }: { onBack: () => void }) {
                       <span className="text-sm font-semibold text-slate-600 min-w-fit">
                         Position {index + 1}:
                       </span>
-                      <span className="flex-1 text-sm text-slate-800">Page {page + 1}</span>
+
+                      <span className="flex-1 text-sm text-slate-800">
+                        Page {page + 1}
+                      </span>
+
                       <div className="flex gap-1">
                         <button
                           onClick={() => moveUp(index)}
-                          disabled={index === 0}
+                          disabled={index === 0 || isProcessing}
                           className="px-2 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:bg-slate-200 disabled:text-slate-400 transition-colors"
                         >
                           ↑
                         </button>
+
                         <button
                           onClick={() => moveDown(index)}
-                          disabled={index === pageOrder.length - 1}
+                          disabled={index === pageOrder.length - 1 || isProcessing}
                           className="px-2 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:bg-slate-200 disabled:text-slate-400 transition-colors"
                         >
                           ↓
@@ -111,31 +188,36 @@ export default function ReorderTool({ onBack }: { onBack: () => void }) {
                 </div>
               </div>
 
+              {/* Buttons */}
               <div className="flex gap-3">
                 <button
-                  onClick={() => setFile(null)}
-                  className="flex-1 px-4 py-3 border border-slate-300 rounded-lg text-slate-700 font-semibold hover:bg-slate-50 transition-colors"
+                  onClick={resetFile}
+                  disabled={isProcessing}
+                  className="flex-1 px-4 py-3 border border-slate-300 rounded-lg text-slate-700 font-semibold hover:bg-slate-50 transition-colors disabled:opacity-50"
                 >
                   Change File
                 </button>
+
                 <button
                   onClick={handleReorder}
-                  disabled={isProcessing}
+                  disabled={isProcessing || pageOrder.length === 0}
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-semibold rounded-lg transition-colors"
                 >
                   <Download className="w-5 h-5" />
                   {isProcessing ? 'Processing...' : 'Apply & Download'}
                 </button>
               </div>
+
             </div>
           )}
         </div>
       </div>
 
+      {/* Hidden Input */}
       <input
         ref={fileInputRef}
         type="file"
-        accept=".pdf"
+        accept="application/pdf"
         onChange={handleFileSelect}
         className="hidden"
       />
